@@ -1,0 +1,581 @@
+================================
+It seems that the version is a little old, and the language starting is inverted？？       |     =>*>-
+================================
+System Organization Basics:
+
+	CPU
+	   |
+	----system bus-----Memory
+	   |
+	I/O device
+
+
+	for CPU:
+				      -----registers
+	control unit <-> Execution unit -|
+				      ---- Flags
+
+	CPU Registers:
+		General Purpose Registers: EAX, EBX, ECX, EDX, ESI, EDI, ESP, EBP
+		Segment Registers: C(ode)S(egment), D(ata)S, S(tack)S, ES, FS, GS	#the later three are for general segments
+		Instruction Pointer Register: EIP *(important) 			#points to the intruction where CPU is executing at this point, we often need try to control this in exploitation
+		Control Registers: CR0, CR1, CR2, CR3, CR4			#internal for control calculations
+		
+		EFLAG register ? 	flag register					#GDB will only show flags that are set
+
+			for General:
+				EAX = Accumulator Register
+				EBX = Base Register	- pointer to data
+				ECX = Counter Register 	- Loop operation
+				EDX = Data Register	- I/O pointer
+				ESI&EDI = Data Pointer Register for memory operation							
+				ESP = Stack Pointer Register
+				EBP = Stack Data Pointer Register
+			be more specific:
+				for E*X:
+					31-0 				#32 bits
+					31-16 15-AX-0			#we can get the latter half by referencing AX
+					           15-AH-8 7-AL-0		#same as goes
+
+	Virtual Memory Model:
+		
+		Every process is laid out in same virtual memory space - regardless the physical ones
+		
+		time sharing - multi-processing
+		
+		OS and CPU together to maintain this abstraction
+
+		program memory structure:
+			0x8FFFFFFF Stack >Unused memory>Heap(Dynamtic memory, mallor())>.bass>.data>.text 0x8048000
+			
+			for Stack specific:
+				last in first off/ ESP points to the top of the stack/ 最先进的在High memory, 之后的往low 加
+				push/pop
+
+============================================================================================================
+c compiling： 	gcc -ggdb -o name name.c
+	./name inputs
+
+check memory in linux:
+	ps -aux | grep name 		#find the process id of the given program * the first string of numbers *
+	
+	ls /proc 				# search runtime information in the kernel
+
+	cat /proc/*the id searched*/ 		#search what's included within the id
+
+	cat /proc/*the id seached*/maps	#check the maps (where the file is running) file of it
+	
+	- r = read; x = execute; w = write
+
+
+Every process is laid out in same virtual memory space - regardless the physical ones
+	virtual memory randomization to defense buffer overflow
+		to switch off 
+			cat /proc/sys/kernel/random
+			cat /proc/sys/kernel/randomize_va_space  	#check 1=on, 0=off
+			echo 0>/proc/sys/kernel/randomize_va_space  	#set
+============================================================================================================
+gdb:
+
+load the program: 
+	gdb ./name
+	
+	list *line_number 			# list from the line number
+	
+	run (inputs)			#运行
+
+	disassemble (function name: ex: main)	#searching for assembly operands
+
+	# further
+	
+	break *line_number			#set breaking point
+	
+	# help *instruction_name_ex:_break	#Look up instruction content
+	
+	run *inputs
+	
+	print *varibles			#print out variables
+	
+	info registers			#check the information of the registers - info *something_to_check
+	
+	x/10xb *checked_address_of_esp	#(inportant) check[x] values of esp (the stack) with 10bytes[10], hex 进制[x], in bytes[b]
+		
+	#when meet with the breakpoint pressing c would continue until the next break point
+	# "s" = step into/Executes a line of source code, entering the function if there is a function call in this line of code
+	# "n" = step over/Executes a line of source code, along with function calls in that line of code
+	#"s" and "n" is for source code while "si" and "ni" is for assembly orders specifically
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+Linux system calls : 
+	libraires which kernel exposes to get the tasks done
+	
+	lists of system calls are in (add vim there if searching)/user/include/asm/unistd.h
+
+	Invoked by using a software interrupt - int 0x80
+
+Rigistors placing order： EAX(System call number)> EBX (first argument)>ECX (second) >EDX>ESI>EDI
+
+void_exit(int status) - exit sys number = 1
+
+ssize_t write(int fd (descriptor), const void *buffer, size_t count) - write sys number =4 // fd=1 is STDOUT; 0 is STDIN; 2 is STDERROR
+
+compile:	as -o name.o name.s 
+		ld -o name name.o
+		./name
+
+============================================================================================================
+bt assembly # vim HellowWorldProgram.s
+#My first Assemble program
+
+.data  					#initialized data
+HellowWorldString: 				#data name
+	.ascii "Hello World/n" 		#data type and date value
+
+.bss 					#all uninitialized date 
+
+.text 					# program instruction
+
+.globl _start 				# external callable routines ex: libraries
+
+_start:    					#main() routine
+	# Load all the arguments for write()
+	movl $4, %eax
+	movl $1, %ebx
+	movl $HellowWorldString, %ecx
+	movl $12, %edx
+	int $0x80
+
+	# Need to exit the program
+	movl $1, %eax
+	movl $0, %ebx
+	int $0x80
+
+# compile as -o HelloWorldProgram.o HelloWorldProgram.s
+# id -o HelloWorldProgram HelloWorldProgram.o 
+#./HelloWorldProgram
+
+-------------------------------------------------------------------------------------------------------------
+#important note: 
+	.ascii is different from .asciz. .asciz automatically followed by a null character
+ex:
+	for .ascii a = "JNZ" and .asciz b = "JNZ"
+		at the storage place:
+			a= 0x4A 0x4E 0x5A
+			b= 0x4A 0x4E 0x5A 0x00
+	a length 3， b length 4
+-------------------------------------------------------------------------------------------------------------
+
+# exit
+
+.text
+
+.globl _start
+
+_start:
+	movl $1, %eax
+	movl $0, %eba
+	int $0x80
+
+============================================================================================================
+Data Type
+
+.acsii = string
+.acsz = Null terminated String
+
+Data in .bss:		# created at run time only / takes up space after it's loaded
+	.comm - declares commom memory area
+	.lcomm - declares local common memory area
+		ex: 
+			.bss
+				.comm Name. 1000 	# type, name, predicted size / only stores zero
+
+for array 
+	ex: IntegerArray:
+			.int 10, 30, 40
+
+as -gstabs(？unknown operand, back when studying linux） -o name.o name.s 
+
+ld -o name name.o
+
+(gdb) info varibles 		#check the address and notation of varibles
+
+x/*** address		#check 	
+
+============================================================================================================
+Basic instructions:
+
+
+MOVx: format MOVx source, destination
+	movl	- move a 32 bit value
+			movel %eax, %ebx		#copy from eax to ebx while value in eax unchange
+	movw 	- move a 16 bit value
+			movw %ax, %bx		#copy from ax to bx while value in ax unchange
+	movb	- move a 08 bit value
+			movb %ah, %bh		#copy from ah to bh while value in ah unchange
+1 - move between registers
+2 - move between registers and the memory		#depending on the size of location, different register shall be chozen: ex: for short ax should be used
+	ex: 
+		location:
+			.int 10
+		movl %eax, location
+		movl location, %ebx
+3 - move immediate value into register
+	ex:
+		movl $4, %ebx
+4 - move immediate value into memory location
+	ex:
+		location:
+			.byte 0
+		movb $10, location			#for it is a byte, we use movb here
+5 - move data into an indexed memory location
+	ex:
+		IntegerArray:
+			.int 10, 20, 30, 40, 50		#BaseAddress(Offset, Index, Size): BaseAddress = IntegerArray at here
+		movl %eax, IntegerArray(0, 2, 4)	#selecting the 3rd integer "30". For we select from the beginning, the offset is zero
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Indirect Addressing using Registers
+	
+	Placing "$" before a label name =>take the memory address of the variable but not the value, same as pointer in C
+		-ex: movl $location, %edi
+	
+	Movl $9, (%edi) 		#Set the point of the address stored in edi to 9 instead of setting the value in edi to 9
+
+	Movl $9, 4(%edi)		#Set the point of the address stored in (edi+4) to 9; 4 is offset and could be negative
+
+===============================================================================
+Work with String
+
+MOVSx     (from register to register)	#move from ESI to EDI.  Can be used directly without parameters for the souce and destination are implied already
+	MOVSB		move a byte (8bits)	
+	MOVSW		move a word (16bits)
+	MOVSL		move a double word (32bits)
+	
+	In MOVSx the source and destination are implied
+		-source: 	       	ESI
+		-destination:   	EDI
+
+	After calling MOVSx, the address stored in ESI and EDI will automatically increment or decrement by the size of moved string depends on the value of the direction flag (DF)
+		if DF=1; then decrement; set by STD instruction
+		if DF=0; then increment; cleared by CLD instruction
+
+	Repeated calls to MOVSx without changing the pointing will then copy the character
+----------------------------------------------------------------------------------------------------
+Using STD and CLD to change the flage (DF specifically)
+
+std	#simply calling std will set DF into 1
+cld	#same as goes but DF=0
+----------------------------------------------------------------------------------------------------
+The REP instruction
+
+REP is used to repeat a string intruction over and over generally until ECX !> 0
+	usage：
+		1：load ECX with the string length
+		2：call REP MOVSx to copy the string	#ECX reduces the number of changing characters per loop
+
+REPZ is used to repeat the instruction while zero flag is set
+	ex: repz cmpsb 		#compare untill meet with an equal character at same index
+
+REPNZ is used to repear the instruction while zero flag is not set
+	ex: repnz cmosb		#compare until meet with a different character
+*****************************************************************************************************
+Load String from memory to registers
+
+LODSx		#load String from ESI to (always) EAX
+	
+	LODSB	#load a byte from memory to AL
+	LODSW	#load a byte from memory to AX
+	LODSL	#load a byte from memory to EAX		#It's copied backwards 		ex: HELL =>LLEH's acsii code
+
+	#ESI will automatically incre or decre depending on the value of DF
+	
+	LEAx A, B	#load effective address intruction	Save A's address to B	
+		for difference between lea and mov, visit: https://www.zhihu.com/question/40720890 (Chinese)
+	
+	dec %esi(or any register) 	#decrement value in esi by 1
+	
+	subl $value, Destination	#decrement the value of destination by $value
+
+Limitation: 
+	-only EAX can be used to be loaded
+	-memory source has to be pointed by ESI 
+*****************************************************************************************************
+Storing string from registers into memory
+
+STOSx			
+	STOSB		store AL to memory
+	STOSW		store AX to memory
+	STOSL		store EAX to memory
+
+	-store into memory from EAX
+	-EDI points to destination memory
+	-from EAX to EDI's address
+	-EDI changed after each STOSx depends on DF 
+	-note: EAX/source does not change so it will start over instead of continuing down
+***************************************************************************************************
+Comparing Strings
+	Souce string : 	ESI
+	Destination String: 	EDI
+	DF decide whether ESI/EDI are inc/dec
+
+	CMPSx
+		B	a byte
+		W	a word
+		L	a double word
+	
+	CMPSx substracts the destination String from the source String and set EFLAG (worked out or not) registor properly 
+
+
+	Zeroflag set when compare the same
+	Parityflag set when the number of “1” is even 
+		ex: for 0000 0110	PF=1
+		ex: for 1001 0001  	PF=0
+****************************************************************************************************
+sum:
+	movsx:
+		From register to register
+		source+-
+		destination+-
+	loadsx:
+		From memory to register
+		source += 
+		destination =
+	stosx:
+		From register to memory
+		source =
+		destination +-
+	cmpsx:	
+		Compare
+		source+-
+		destination+-
+================================================================
+Program Execution Flow：
+
+******************************************************************************************************
+Unconditional branching
+	
+	JMP(jump)
+		- compare it with GOTO: statement in C ?? (back when leaning C）
+		- Syntax: JMP LABEL
+		- Short (plus - 128 bytes from current) , near(betw short and far), and far (to a different segment) jump possible
+		-The idea should be moving the EIP pointer to skip a piece of code by	 
+
+		ex:
+			1. _start
+			2.	jmp kk
+			3.	movl $4, %eax
+			4. kk:
+			5.	movl $4, %ebx
+					#Here you jump straight from line 2 to line 4, and only ebx has 4
+	
+		operand：nop 	Buffering a clock cycle does not move
+
+	Call
+		- calling a function
+		- syntax: call location
+		- there is an associated "RET" statement with every call
+			"ret" is similar to "return" in c language, but not all the same
+		- "call" will push the next instruction address onto the stack		
+			the instruction is popped back into EIP on hitting the "RET" instruction
+		
+	ex:
+		1. _start
+			2.	cal kk
+			3.	movl $4, %eax
+			4. kk:
+			5.	movl $4, %ebx
+			6. 	ret
+					#Here you jump straight from line 2 to line 4. Return to line 3 after executing ret. eax and ebx both have 4's
+*****************************************************************************************************************************************************
+Conditional branching
+
+	JXX - conditional jump			#only support near and short jump
+		JA	#jump above 		= "unsigned >"
+		JAE	#jump above and equal to 	= "unsigned >="
+ 		JE	#jump equal to
+		JB	#jump below 		= "unsigned <"
+		JG 	#jump greater 		= "signed >"
+		JL	#jump less than 		= "signed <"
+		JZ	#jump if zero flag is set
+		JNZ	#jump is zero flag is not set
+		
+	
+	Flags	#the conditoin
+		Zero flag		#Zero flag is set anytime when an arithmatic operation is zero. Thus, using xorl %eax, %eax could set zero flag to zero	
+		Parity flag
+		Overflow flag
+		Sign flag
+		Carry flag
+		#more information regarding to flags are available at http://www2.hawaii.edu/~pager/312/notes/07Flags/#:~:text=Zero%20flag%20(ZF)%20%2D%20the,most%20significant%20bit%20(msb).
+
+	Loop	#loop in predetermined time
+		
+		first: load the number of loops in ecx (important)
+		#then the loop instruction will automatically decrease value in ecx until meet with zero
+		second: add a label
+		third: code segment and loop label at last
+ex:	
+	.data
+		Hello:
+		.ascii "Haha"
+		
+	_start
+		movl %10, %ecx
+		
+		loopthis:	
+			movl hello, %esi
+			movl hello, %edi
+			cmpsx
+			loop loopthis
+
+conditional loop
+	loopz	#loop until ECX is not zero (loop condition) or the zero flag is not set (z condition)
+	loopnz	#loop until ECX is not zero(loop condition) or the zero flag is set (z condition)
+
+**********************************************************************************************************************************************************************************************************************************
+other important instruction mentioned there:
+
+xorl register, register	#执行xor, This is an arithmetic expression, so you can set Zero Flag
+		ex: xorl $eax, $eax	#set eax with 0 as any number xor with itself returns 0
+				#reason: xor %eax, %eax has less charaters than mov %0, eax 
+				#further explaination: https://stackoverflow.com/questions/33666617/what-is-the-best-way-to-set-a-register-to-zero-in-x86-assembly-xor-mov-or-and
+
+
+pushl %ecx			#push the current value of ecx onto the stack
+popl %ecx			#pop the value on the stack back to ecx
+#important: using push, pop temporaily store ecx data
+	When the loop content uses ecx, use push, pop to make the space out. stack does temporary storage
+ex:
+movl $10, %ecx
+L:
+	pushL %ecx
+	movl $4, %eax
+	movl $1, %ebx
+	lead HelloWorld, %ecx 	#assum we had defined HelloWorld before. This line requirs the space of ecx, and the loop after this also need to use ecx, so we need to avoid the conflict by using pop and push
+	movl $14, %edx
+	int $0x80
+	popl %ecx
+loop L
+============================================================================================================================================			
+Functions
+	Define: 
+		.type FunctionName, @function	#between global _start and _start
+	
+		FunctionName:
+		<code>
+		ret
+	
+	Function is invoked using "call FunctionName"
+
+Passing Arguments to functions 
+	-Registers
+	-Global memory locations(GML)
+	-stack
+
+Returning Value from a function
+	-Registers
+	-Global memory locations
+
+for GML:
+	.bss
+		.lcomm k, 4 	#we could use this 4 byte location to transfer arguments and data from and to functions
+
+	movl %ecx, k
+	movl k,%ecx
+	movl $11, k
+====================================================================================
+Passing Arguments via the Stack to a function
+
+for code segment:
+	int Add(int a, int b)
+{
+	int c;
+	c=a+b;
+	return c;
+}
+
+	Main()
+{
+	Add(10,20);
+	print();
+}
+
+
+The stack:		#ESP always points to the latest entered place
+|		#if ESP is gonna used in main function, the current pointer will be saved in EBP register
+|		#but EBP might be used in main function. See line 5
+|		#We can use the value saved in EBP to locate values in the stack, for EBP would point to mid of main and local function 
+---------------------------------------------
+				 ||
+				 V	
+		High memory
+1		|4 bytes	|# 
+
+2||12(%EBP)	|20	|#Args to Add(): Add(10,20)// we push 10 and 20 into stack before executing the code. 
+			| Q: "reversed order" or "order don't matter" Ans: reversed order
+		|	|
+3||8(%EBP)	|10	|
+		|	|
+4||4(%EBP)	|RET	|# ret is added when we use "call" operand. After retuned, RET will be poped out automatically by ret instruction
+		|	|
+5||(%EBP)		|EBP old value|#Save the old value in stack so that EBP can save ESP; Q: why not save ESP directly to stack? Ans: We need to use this value, and save ESP in stack would make it less reachable  
+	do: copy current ESP into EBP, so that EBP points to the end of stack of the local function Add()
+		|	|
+6||-4(%EBP)	|int c	|#local variables, enter the function
+		Low memory
+
+ex:
+
+.data
+	HelloWorld:
+	acsiz. "HelloWorld!/n"
+.text
+
+	.global start_
+	.type PrintFunction, @function
+
+	PrintFunction:
+		#prepare state
+		pushl %ebp
+		movl %esp, ebp
+
+		#write
+		movl $4, %eax
+		movl $1, %ebx
+		movl 8(%ebp), %ecx
+		movl12(%ebp), %edx
+		int 0x80
+
+		#return state
+		movl $ebp, $esp	#clear esp from potential data in the function
+		pop $ebp
+		ret	
+
+_start:
+	nop
+	push $13
+	push $HelloWorld
+	call PrintFunction
+	addl $8, %esp	#adjuct ESP for the insertion of 13 and "HelloWorld", returnning the stack pointer to the original place
+
+	ExistCall:
+		movl $1, %eax
+		int 0x80
+
+
+Q: why not pop out 13 and "HelloWorld" instead of add 8 to ESP?
+
+Ans: 
+https://stackoverflow.com/questions/75949373/whats-the-difference-between-do-addtion-to-esp-and-do-pop
+&&
+https://stackoverflow.com/questions/5904018/pop-or-add-esp-4-what-is-the-difference
+
+
+
+
+
+
+
+
+
+
